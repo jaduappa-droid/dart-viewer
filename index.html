@@ -5,8 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>DART 공시 뷰어</title>
 
-<!-- corpCode.xml은 ZIP 파일로 내려오기 때문에 브라우저에서 압축을 풀기 위해 JSZip 사용 -->
-<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -214,7 +212,7 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const PROXY = 'https://api.allorigins.win/raw?url=';
+const PROXY = 'https://corsproxy.io/?';
 const DART_BASE = 'https://opendart.fss.or.kr/api';
 
 let apiKey = '';
@@ -298,55 +296,21 @@ async function search() {
 
 // ── DART 고유번호 목록 로드 ──
 async function loadCorpList() {
-  if (corpList.length && corpListLoadedKey === apiKey) return;
+  if (corpList.length) return;
 
-  document.getElementById('loading').textContent = 'DART 기업 고유번호 목록을 불러오는 중... 최초 조회에는 시간이 조금 걸릴 수 있습니다.';
+  document.getElementById('loading').textContent =
+    '기업 고유번호 목록을 불러오는 중...';
 
-  const cachedRaw = localStorage.getItem('dartCorpListCache');
-  const cachedKey = localStorage.getItem('dartCorpListCacheKey');
-  const cachedDate = localStorage.getItem('dartCorpListCacheDate');
-  const today = new Date().toISOString().slice(0, 10);
+  const res = await fetch('corpData.json');
 
-  if (cachedRaw && cachedKey === apiKey && cachedDate === today) {
-    corpList = JSON.parse(cachedRaw);
-    corpListLoadedKey = apiKey;
-    return;
+  if (!res.ok) {
+    throw new Error('corpData.json 파일을 불러오지 못했습니다. GitHub에 corpData.json이 index.html과 같은 위치에 있는지 확인해주세요.');
   }
 
-  const url = `${DART_BASE}/corpCode.xml?crtfc_key=${encodeURIComponent(apiKey)}`;
-  const res = await fetch(PROXY + encodeURIComponent(url));
+  corpList = await res.json();
 
-  if (!res.ok) throw new Error('기업 고유번호 목록을 불러오지 못했습니다.');
-
-  const buffer = await res.arrayBuffer();
-  const zip = await JSZip.loadAsync(buffer);
-
-  const xmlFileName = Object.keys(zip.files).find(name => name.toLowerCase().endsWith('.xml'));
-  if (!xmlFileName) throw new Error('corpCode ZIP 안에서 XML 파일을 찾지 못했습니다.');
-
-  const xmlText = await zip.files[xmlFileName].async('text');
-  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
-
-  const errorNode = doc.querySelector('parsererror');
-  if (errorNode) throw new Error('기업 고유번호 XML 파싱에 실패했습니다.');
-
-  corpList = [...doc.querySelectorAll('list')].map(node => ({
-    corp_code: getText(node, 'corp_code'),
-    corp_name: getText(node, 'corp_name'),
-    stock_code: getText(node, 'stock_code'),
-    modify_date: getText(node, 'modify_date')
-  })).filter(c => c.corp_code && c.corp_name);
-
-  if (!corpList.length) throw new Error('기업 고유번호 목록이 비어 있습니다. API 키를 확인해주세요.');
-
-  corpListLoadedKey = apiKey;
-
-  try {
-    localStorage.setItem('dartCorpListCache', JSON.stringify(corpList));
-    localStorage.setItem('dartCorpListCacheKey', apiKey);
-    localStorage.setItem('dartCorpListCacheDate', today);
-  } catch(e) {
-    console.warn('corpList cache skipped:', e);
+  if (!Array.isArray(corpList) || !corpList.length) {
+    throw new Error('corpData.json 파일이 비어 있거나 형식이 올바르지 않습니다.');
   }
 }
 
